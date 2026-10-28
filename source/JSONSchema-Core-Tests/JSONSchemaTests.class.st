@@ -69,6 +69,33 @@ JSONSchemaTests >> testAllOfCompositionWithNonObjectBranchFallsBackToPassthrough
 ]
 
 { #category : 'tests' }
+JSONSchemaTests >> testAnyOfBesideAdditionalPropertiesFalseChecksEachBranchOnItsOwn [
+	"additionalProperties:false belongs to the outer schema; the anyOf branches only
+	add their own keywords and must not inherit it. Reported 2026-10-28 against an image
+	that still ran 1d2fd5a (no anyOf support); held here for the ApptiveML event trigger."
+	| schema |
+	schema := JSONSchema fromString: '{"type":"object","properties":{"type":{"enum":["event","external"]},"grid":{"type":"string"},"event":{"type":"string"},"id":{"type":"string"}},"anyOf":[{"required":["event"]},{"required":["type"],"properties":{"type":{"not":{"const":"event"}}}}],"additionalProperties":false}'.
+	self shouldnt: [ schema validate: { 'type'->'external'. 'id'->'h' } asDictionary ] raise: Error.
+	self shouldnt: [ schema validate: { 'type'->'event'. 'grid'->'a'. 'event'->'entityAdded' } asDictionary ] raise: Error.
+	self should: [ schema validate: { 'type'->'event' } asDictionary ] raise: JSONConstraintError.
+	self should: [ schema validate: { 'type'->'external'. 'extra'->1 } asDictionary ] raise: JSONSchemaError
+]
+
+{ #category : 'tests' }
+JSONSchemaTests >> testIfThenAppliesBesideProperties [
+	"if/then must be checked on an object schema that also declares properties, and
+	also when it sits inside an allOf branch. Reported 2026-10-28 against an image that
+	still ran 1d2fd5a (no if/then support); held here for the ApptiveML event trigger."
+	| schema nested |
+	schema := JSONSchema fromString: '{"type":"object","properties":{"type":{"enum":["event","external"]}},"if":{"properties":{"type":{"const":"event"}}},"then":{"required":["event"]}}'.
+	nested := JSONSchema fromString: '{"type":"object","properties":{"type":{"enum":["event","external"]}},"allOf":[{"if":{"properties":{"type":{"const":"event"}}},"then":{"required":["event"]}}]}'.
+	{ schema. nested } do: [ :each |
+		self should: [ each validate: { 'type'->'event' } asDictionary ] raise: JSONSchemaMissingRequiredProperty.
+		self shouldnt: [ each validate: { 'type'->'event'. 'event'->'entityAdded' } asDictionary ] raise: Error.
+		self shouldnt: [ each validate: { 'type'->'external' } asDictionary ] raise: Error ]
+]
+
+{ #category : 'tests' }
 JSONSchemaTests >> testMultipleConstraintsOnAnyObject [
 	| schema |
 	schema := JSONSchema
